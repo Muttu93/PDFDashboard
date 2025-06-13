@@ -1,74 +1,61 @@
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify
 import os
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'  # Needed for flashing messages
 
-# Configuration
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')  # Save in 'uploads' directory inside the project
-ALLOWED_EXTENSIONS = {'pdf'}
-
+UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Ensure upload folder exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Function to check allowed file types
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-# Route to show dashboard
 @app.route('/')
 def index():
     files = []
     for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-        if allowed_file(filename):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            upload_time = datetime.fromtimestamp(os.path.getctime(filepath)).strftime('%Y-%m-%d %H:%M:%S')
+        if filename.endswith('.pdf'):
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            upload_time = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M:%S')
             files.append({'name': filename, 'upload_time': upload_time})
-    return render_template('index1.html', files=files)
+    return render_template('index.html', files=files)
 
-# Route to handle file upload
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        flash('No file part')
-        return redirect(url_for('index'))
-
+        return redirect(request.url)
     file = request.files['file']
-
     if file.filename == '':
-        flash('No file selected')
-        return redirect(url_for('index'))
-
-    if file and allowed_file(file.filename):
+        return redirect(request.url)
+    if file and file.filename.endswith('.pdf'):
         filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        flash('File uploaded successfully')
-        return redirect(url_for('index'))
-    else:
-        flash('Invalid file type. Only PDFs are allowed.')
-        return redirect(url_for('index'))
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    return redirect(url_for('index'))
 
-# Route to preview PDF
-@app.route('/preview/<filename>')
-def preview_file(filename):
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# Route to delete selected files
 @app.route('/delete', methods=['POST'])
 def delete_files():
-    selected_files = request.form.getlist('selected_files')
-    for filename in selected_files:
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-    flash('Selected files deleted successfully')
+    files_to_delete = request.form.getlist('files')
+    for file_name in files_to_delete:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file_name)
+        if os.path.exists(file_path):
+            os.remove(file_path)
     return redirect(url_for('index'))
+
+@app.route('/search', methods=['GET'])
+def search_files():
+    query = request.args.get('query', '').lower()
+    matched_files = []
+    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+        if filename.endswith('.pdf') and query in filename.lower():
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            upload_time = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M:%S')
+            matched_files.append({'name': filename, 'upload_time': upload_time})
+    return jsonify(matched_files)
 
 if __name__ == '__main__':
     app.run(debug=True)
