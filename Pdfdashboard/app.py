@@ -1,61 +1,73 @@
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash
 import os
+from werkzeug.utils import secure_filename
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'myfirstproject'  # Local use only
+app.secret_key = 'your_secret_key_here'  # Needed for flashing messages
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
+# Configuration
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')  # Save in 'uploads' directory inside the project
+ALLOWED_EXTENSIONS = {'pdf'}
 
-SECTIONS = ['Store', 'Material', 'Employee']
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-def get_files(section):
-    folder = os.path.join(DATA_DIR, section)
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    files = []
-    for filename in os.listdir(folder):
-        if filename.endswith('.pdf'):
-            filepath = os.path.join(folder, filename)
-            upload_time = datetime.fromtimestamp(os.path.getctime(filepath)).strftime('%Y-%m-%d %H:%M:%S')
-            files.append({'name': filename, 'path': filepath, 'time': upload_time})
-    return files
+# Ensure upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
-@app.route('/', methods=['GET', 'POST'])
+# Function to check allowed file types
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Route to show dashboard
+@app.route('/')
 def index():
-    selected_section = request.form.get('section', 'Store')
-    search_query = request.form.get('search', '').lower()
-    files = get_files(selected_section)
-    if search_query:
-        files = [f for f in files if search_query in f['name'].lower() or search_query in f['time']]
-    return render_template('index1.html', sections=SECTIONS, files=files, selected=selected_section)
+    files = []
+    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+        if allowed_file(filename):
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            upload_time = datetime.fromtimestamp(os.path.getctime(filepath)).strftime('%Y-%m-%d %H:%M:%S')
+            files.append({'name': filename, 'upload_time': upload_time})
+    return render_template('index1.html', files=files)
 
+# Route to handle file upload
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    section = request.form['section']
+    if 'file' not in request.files:
+        flash('No file part')
+        return redirect(url_for('index'))
+
     file = request.files['file']
-    if file and file.filename.endswith('.pdf'):
-        save_path = os.path.join(DATA_DIR, section, file.filename)
-        file.save(save_path)
-        flash('File uploaded successfully!', 'success')
+
+    if file.filename == '':
+        flash('No file selected')
+        return redirect(url_for('index'))
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        flash('File uploaded successfully')
+        return redirect(url_for('index'))
     else:
-        flash('Only PDF files allowed!', 'danger')
-    return redirect(url_for('index'))
+        flash('Invalid file type. Only PDFs are allowed.')
+        return redirect(url_for('index'))
 
-@app.route('/view/<section>/<filename>')
-def view_file(section, filename):
-    return send_from_directory(os.path.join(DATA_DIR, section), filename)
+# Route to preview PDF
+@app.route('/preview/<filename>')
+def preview_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+# Route to delete selected files
 @app.route('/delete', methods=['POST'])
 def delete_files():
-    section = request.form['section']
-    files_to_delete = request.form.getlist('delete_files')
-    for filename in files_to_delete:
-        file_path = os.path.join(DATA_DIR, section, filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    flash('File(s) deleted successfully!', 'success')
+    selected_files = request.form.getlist('selected_files')
+    for filename in selected_files:
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    flash('Selected files deleted successfully')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
