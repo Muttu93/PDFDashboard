@@ -29,7 +29,7 @@ def index():
     files = get_files(selected_section)
     if search_query:
         files = [f for f in files if search_query in f['name'].lower() or search_query in f['time']]
-    return render_template('index.html', sections=SECTIONS, files=files, selected=selected_section)
+    return render_template('index1.html', sections=SECTIONS, files=files, selected=selected_section)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
